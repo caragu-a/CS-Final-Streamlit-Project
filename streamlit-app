@@ -1,0 +1,516 @@
+import streamlit as st
+import requests
+import pandas as pd
+import numpy as np
+from numpy.core.defchararray import capitalize, lower
+import re
+
+st.title("Final Project CAP4104")
+st.header("Pokémon API")
+st.info("This is a Streamlit application dedicated to Pokémon fans. "
+        "Functions include viewing a Pokémon's general information, such as their stats or abilities. "
+        "Please select a Pokémon to get started, or "
+        "you can select 'Help' on the sidebar if you need a short explanation on the topic.")
+
+def map_creator(latitude, longitude):
+    from streamlit_folium import folium_static
+    import folium
+
+    # center on the station
+    m = folium.Map(location=[latitude, longitude], zoom_start=10)
+
+    # add marker for the station
+    folium.Marker([latitude, longitude], popup="Station", tooltip="Station").add_to(m)
+
+    # call to render Folium map in Streamlit
+    folium_static(m)
+
+@st.cache_data
+def generate_list_of_pokemon():
+    pokemon_url = f"https://pokeapi.co/api/v2/pokedex/1"
+    pokemon_dict = requests.get(pokemon_url).json()
+    # st.write(pokemon_dict)
+    return pokemon_dict
+
+@st.cache_data
+def generate_list_of_types():
+    type_url = f"https://pokeapi.co/api/v2/type"
+    type_dict = requests.get(type_url).json()
+    # st.write(type_dict)
+    return type_dict
+
+@st.cache_data
+def generate_list_of_abilities():
+    ability_url = f"https://pokeapi.co/api/v2/ability?limit=303&offset=0"
+    ability_dict = requests.get(ability_url).json()
+    # st.write(ability_dict)
+    return ability_dict
+
+@st.cache_data
+def generate_pokemon_info(pokemon):
+    info_url = f"https://pokeapi.co/api/v2/pokemon/{pokemon}"
+    info_dict = requests.get(info_url).json()
+    # st.write(info_dict)
+    return info_dict
+
+@st.cache_data
+def generate_species_info(species_number):
+    species_url = f"https://pokeapi.co/api/v2/pokemon-species/{species_number}"
+    species_dict = requests.get(species_url).json()
+    # st.write(species_dict)
+    return species_dict
+
+@st.cache_data
+def generate_ability_info(ability):
+    ability_url = f"https://pokeapi.co/api/v2/ability/{ability}"
+    ability_dict = requests.get(ability_url).json()
+    # st.write(ability_dict)
+    return ability_dict
+
+@st.cache_data
+def generate_type_info(type):
+    typeinfo_url = f"https://pokeapi.co/api/v2/type/{type}"
+    typeinfo_dict = requests.get(typeinfo_url).json()
+    # st.write(typeinfo_dict)
+    return typeinfo_dict
+
+@st.cache_data
+def remove_non_ascii(text):
+    return re.sub(r'[^\x00-\x7F]', 'é', text)
+# This function is for fixing the description of some abilities in the API, which return a replacement character. We
+# used the internet for this function
+
+choice = st.sidebar.selectbox("Please select a Pokémon, or select 'Help'.", ["Select a Pokémon", "Help"])
+if choice == "Select a Pokémon":
+    pokemon_dict = generate_list_of_pokemon()
+    pokemon_list = []
+    for i in pokemon_dict["pokemon_entries"]:
+        pokemon_list.append(i["pokemon_species"]["name"])
+    pokemon_list.insert(0, "")
+    pokemon_selected = lower(st.selectbox("Select a Pokemon", options=capitalize(pokemon_list)))
+    if pokemon_selected:
+        st.success(f"You have selected {capitalize(pokemon_selected)}.")
+        index = -1
+        for n in pokemon_list:
+            index = index + 1
+            if n == pokemon_selected:
+                st.info(f"Its index in the National Pokédex is {index}.")
+                break
+        try:
+            info_dict = generate_pokemon_info(pokemon_selected)
+            species_dict = generate_species_info(pokemon_selected)
+        except:
+            info_dict = generate_pokemon_info(index)
+            species_dict = generate_species_info(index)
+        type_list = []
+        for t in info_dict["types"]:
+            type_list.append((t["type"]["name"]))
+        if type_list.__len__() == 1:
+            st.info(f"The Pokémon is {capitalize(type_list[0])}-type.")
+        else:
+            st.info(f"The Pokémon is part {capitalize(type_list[0])}-type, part {capitalize(type_list[1])}-type.")
+        if st.button("Show image"):
+            st.image(info_dict["sprites"]["front_default"], width=500)
+        ability_check = st.checkbox("Show ability data.")
+        stat_check = st.checkbox("Show stats data.")
+        if ability_check:
+            ability_list = []
+            for i in info_dict["abilities"]:
+                ability_list.append(i["ability"]["name"])
+            ability_list.insert(0, "")
+            ability_count = ability_list.__len__()
+            if ability_count - 1 == 1:
+                st.info(f"The Pokémon {capitalize(pokemon_selected)} only has 1 ability.")
+            else:
+                st.info(f"The Pokémon {capitalize(pokemon_selected)} has {ability_count - 1} different possible "
+                        f"abilities.")
+            shown_ability = st.multiselect('Which ability would you like to hear about?', options=ability_list)
+            if shown_ability:
+                for i in shown_ability:
+                    if i == "":
+                        st.error("This is an invalid option.")
+                    else:
+                        ability_dict = generate_ability_info(i)
+                        description = ""
+                        for u in ability_dict["effect_entries"]:
+                            if u["language"]["name"] == 'en':
+                                description= u["short_effect"]
+                        if description == "":
+                            for e in ability_dict["flavor_text_entries"]:
+                                if e["language"]["name"] == "en":
+                                    description = e["flavor_text"]
+                        if description == "":
+                            st.error(f"Sadly, there is no information about the ability {capitalize(i)} in the "
+                                     f"database.")
+                        else:
+                            description = remove_non_ascii(description)
+                            st.info(f"{capitalize(i)}: {description}")
+        if stat_check:
+            stats_list = []
+            for i in info_dict["stats"]:
+                stats_list.append(i["base_stat"])
+            stats_list[0], stats_list[2] = stats_list[2], stats_list[0]
+            stats_list[0], stats_list[1] = stats_list[1], stats_list[0]
+            # Streamlit organizes its bar graphs' x-axis alphabetically, so we had to change the positions of some
+            # values in the list
+            stat_names = ['Attack', 'Defense', 'HP', 'Special Attack', 'Special Defense', 'Speed']
+            option = st.radio(
+                "How would you like to view the Pokémon's stats?",
+                ["Bar Graph", "Simple", "Calculator"],
+                captions=["View it in image-format.", "The Pokémon's base stats in text format.",
+                          "Use different inputs to change the total stats of the Pokémon."])
+
+            if option == "Bar Graph":
+                f"{capitalize(pokemon_selected)}'s base stats"
+                stats_data = pd.DataFrame(stats_list, stat_names)
+                st.bar_chart(stats_data)
+                base_stat_total = 0
+                for i in stats_list:
+                    base_stat_total = base_stat_total + i
+                st.write(f"{capitalize(pokemon_selected)}'s base stat total is {base_stat_total}.")
+            elif option == "Simple":
+                result_string = ''
+                x = 0
+                for i in stat_names:
+                    result_string = i + ": "
+                    result_string = result_string + str(stats_list[x]) + '\n'
+                    st.write(result_string)
+                    x = x + 1
+                base_stat_total = 0
+                for i in stats_list:
+                    base_stat_total = base_stat_total + i
+                st.write(f"{capitalize(pokemon_selected)}'s base stat total is {base_stat_total}.")
+            elif option == "Calculator":
+                input_check = st.radio(
+                    "Would you like to view sample stats or select your own inputs?",
+                    ["Sample", "Select my own inputs"],
+                    captions=["Bring up a table of sample stats.", "Enter your own values to see how stats change in "
+                            "specific scenarios."])
+                if input_check == "Select my own inputs":
+                    st.warning("Several different values are going to be asked of you.")
+                    level = st.slider('What level is the Pokemon?', 1, 100, 50)
+                    st.warning("As a precaution, the IV and EV values you will input will be the same for all the "
+                               "Pokémon's stats.")
+                    iv_input = st.number_input("What is the IV value? (From 0 to 31)", 0, 31, value=0)
+                    ev_input = st.number_input("What is the EV value? (From 0 to 255)", 0, 255, value=0)
+                    stat_buffed = st.selectbox("Select a stat to be increased.", ["Attack", "Defense", "Special Attack",
+                                                                                  "Special Defense", "Speed"])
+                    stat_nerfed = st.selectbox("Select a stat to be decreased.", ["Attack", "Defense", "Special Attack",
+                                                                                  "Special Defense", "Speed"])
+                    changed_stats = []
+                    buff_check = -1
+                    nerf_check = -1
+                    index = 0
+                    if stat_buffed == stat_nerfed:
+                        for i in stats_list:
+                            if index == 2:
+                                diff_stat = (((2 * i + iv_input + (ev_input/4)) * level) / 100) + level + 10
+                            else:
+                                diff_stat = ((((2 * i + iv_input + (ev_input/4)) * level) / 100) + 5) * 1
+                            changed_stats.append(int(diff_stat))
+                            index = index + 1
+                    else:
+                        index = 0
+                        for i in stat_names:
+                            if i == stat_buffed:
+                                buff_check = stat_names.index(i)
+                            elif i == stat_nerfed:
+                                nerf_check = stat_names.index(i)
+                        for y in stats_list:
+                            if index == buff_check:
+                                diff_stat = ((((2 * y + iv_input + (ev_input / 4)) * level) / 100) + 5) * 1.1
+                            elif index == nerf_check:
+                                diff_stat = ((((2 * y + iv_input + (ev_input / 4)) * level) / 100) + 5) * 0.9
+                            elif index == 2:
+                                diff_stat = (((2 * y + iv_input + (ev_input / 4)) * level) / 100) + level + 10
+                            else:
+                                diff_stat = ((((2 * y + iv_input + (ev_input / 4)) * level) / 100) + 5) * 1
+                            index = index + 1
+                            changed_stats.append(int(diff_stat))
+                    st.info(f"These are {capitalize(pokemon_selected)}'s stats with your inputs:")
+                    result_string = ''
+                    y = 0
+                    for i in stat_names:
+                        if y == buff_check:
+                            st.write(f":green[{i}: {changed_stats[y]}]")
+                        elif y == nerf_check:
+                            st.write(f":red[{i}: {changed_stats[y]}]")
+                        else:
+                            st.write(f"{i}: {changed_stats[y]}")
+                        y = y + 1
+                else:
+                    st.warning("This is calculated without the use of natures, IVs, or EVs. "
+                               "Natures are all neutral. IVs and EVs are all set to 0.")
+                    low_level = 0
+                    high_level = 0
+                    lvl50_stats = []
+                    lvl100_stats = []
+                    index = 0
+                    for i in stats_list:
+                        if index == 2:
+                            low_level = (((2 * i + 0 + 0) * 50) / 100) + 50 + 10
+                            high_level = (((2 * i + 0 + 0) * 100) / 100) + 100 + 10
+                            lvl50_stats.append(low_level)
+                            lvl100_stats.append(high_level)
+                        else:
+                            low_level = ((((2 * i + 0 + 0) * 50) / 100) + 5) * 1
+                            high_level = ((((2 * i + 0 + 0) * 100) / 100) + 5) * 1
+                            lvl50_stats.append(low_level)
+                            lvl100_stats.append(high_level)
+                        index = index + 1
+                    stats_table = pd.DataFrame(
+                        {
+                            "Stats at:": ["Base", "Level 50", "Level 100"],
+                            "Attack": [stats_list[0], lvl50_stats[0], lvl100_stats[0]],
+                            "Defense": [stats_list[1], lvl50_stats[1], lvl100_stats[1]],
+                            "HP": [stats_list[2], lvl50_stats[2], lvl100_stats[2]],
+                            "Special Attack": [stats_list[3], lvl50_stats[3], lvl100_stats[3]],
+                            "Special Defense": [stats_list[4], lvl50_stats[4], lvl100_stats[4]],
+                            "Speed": [stats_list[5], lvl50_stats[5], lvl100_stats[5]],
+                        }
+                    )
+                    st.dataframe(stats_table)
+                    base_stat_total = 0
+                    for i in stats_list:
+                        base_stat_total = base_stat_total + i
+                    st.write(f"{capitalize(pokemon_selected)}'s base stat total is {base_stat_total}.")
+else:
+    st.info("Pokémon is a franchise that is developed by Game Freak and "
+            "published by Nintendo and the Pokémon Company.")
+    tutorial = st.selectbox("Select what topic you'd like to learn about.", ["Companies behind Pokémon",
+                                                                             "Pokémon general info", "Types",
+                                                                             "Abilities", "Pokémon base stats",
+                                                                             "Natures, IVs, and EVs"])
+    if tutorial == "Companies behind Pokémon":
+        company_hear = st.radio("Select the company you'd like to hear about.",
+                                ["Game Freak Inc.", "Nintendo", "Pokémon Company"],
+                                captions=["The developers behind the franchise.", "The massive company that serves as "
+                                        "one of the series' publishers.", "The company created just for managing "
+                                        "the series."])
+        if company_hear == "Game Freak Inc.":
+            st.write("Game Freak Inc. is stationed in Japan and is the developer of Pokémon, as well as a co-owner of"
+                     " the entire franchise.")
+            st.info("Game Freak Inc. headquarters is stationed in Kanda Square in Tokyo, Japan.")
+            map_creator(35.6932092091899, 139.76328731884269)
+        elif company_hear == "Nintendo":
+            st.write("Nintendo is a Japanese multinational video game company. It develops, publishes, and releases "
+                     "both video games and video game consoles.")
+            nintendo_loc = st.radio("Select the headquarters you'd like to see on the map.",
+                                    ["Nintendo of Japan", "Nintendo of America"],
+                                    captions=["Stationed in Kyoto, Japan.", "Stationed in Redmond, Washington."])
+            if nintendo_loc == "Nintendo of Japan":
+                map_creator(34.96994118390627, 135.75618753923214)
+            elif nintendo_loc == "Nintendo of America":
+                map_creator(47.651174619405644, -122.1391600161055)
+        else:
+            st.write("Shortened to TPC, this company was created by the three co-owners of Pokémon just to manage "
+                     "the series' brand, handling various tasks regarding its games, television series, movies, "
+                     "trading cards, merchandise, etc.")
+            st.info("The Pokémon Company is stationed in the Roppongi Hills Mori Tower in Tokyo, Japan.")
+            map_creator(35.66091752937583, 139.72917441041898)
+    elif tutorial == "Pokémon general info":
+        st.write("There are over 1,000 Pokémon currently in existence, with more to come. Each Pokémon has a variety "
+                 "of different characteristics specific to them, such as their type, their move-set, their stats, or "
+                 "their abilities. Each Pokémon is different, and you can view all of them here, if you select the "
+                 "Pokémon you'd like to hear about.")
+        st.image("https://www.pockettactics.com/wp-content/sites/pockettactics/2023/09/pokemon-games-in-order-16-580x3"
+                 "34.jpeg", caption="A picture of different Pokémon. From left to right: Miraidon, Pikachu, "
+                                    "Charizard, Trubbish, Rayquaza")
+    elif tutorial == "Types":
+        st.write("Currently, there are 18 different types. Any Pokémon can have a maximum of two types. The types "
+                 "are as follows:")
+        st.image("https://qph.cf2.quoracdn.net/main-qimg-c0507104bed8784bc06b5c61125d9398-pjlq",
+                caption="A picture of all the Pokémon types.")
+        st.write("Each type has its list of defensive and offensive resistances and weaknesses, while some also "
+                 "have immunities.")
+        st.write("When a Pokémon has two types, both of those types' respective resistances and weaknesses are "
+                 "calculated, giving some Pokémon such attributes such as quadruple weaknesses and quadruple "
+                 "resistances. There are also some abilities which can give you a resistance, weakness, or immunity to "
+                 "a specific type.")
+        st.write("Please pick a type in the input below if you would like to know about a specific type's "
+                 "attributes.")
+        type_dict = generate_list_of_types()
+        type_list = []
+        for i in type_dict["results"]:
+            type_list.append(i["name"])
+        type_list.insert(0, "")
+        type_list.remove("shadow")
+        type_list.remove("unknown")
+        type_selected = lower(st.selectbox("Select a type.", options=capitalize(type_list)))
+        if type_selected:
+            selected_dict = generate_type_info(type_selected)
+            st.info(f"You picked {capitalize(type_selected)}.")
+            offense_plus = []
+            offense_neg = []
+            offense_null = []
+            defense_plus = []
+            defense_neg = []
+            defense_null = []
+            if st.button("Show offensive attributes"):
+                off_plus_message = "This type deals double the damage to: "
+                off_neg_message = "This type deals half as much damage to: "
+                off_null_message = "This type deals no damage to: "
+                index = 0
+                for o in selected_dict["damage_relations"]["double_damage_to"]:
+                    offense_plus.append(o["name"])
+                    try:
+                        off_plus_message = off_plus_message + offense_plus[index] + " "
+                    except:
+                        off_plus_message = off_plus_message
+                    index = index + 1
+                index1 = 0
+                for d in selected_dict["damage_relations"]["half_damage_to"]:
+                    offense_neg.append(d["name"])
+                    try:
+                        off_neg_message = off_neg_message + offense_neg[index1] + " "
+                    except:
+                        off_neg_message = off_neg_message
+                    index1 = index1 + 1
+                index2 = 0
+                for i in selected_dict["damage_relations"]["no_damage_to"]:
+                    offense_null.append(i["name"])
+                    try:
+                        off_null_message = off_null_message + offense_null[index2] + " "
+                    except:
+                        off_null_message = off_null_message
+                    index2 = index2 + 1
+                if offense_plus.__len__() != 0:
+                    st.success(f"{off_plus_message}")
+                else:
+                    st.success("This type deals double damage to no other types.")
+                if offense_neg.__len__() != 0:
+                    st.warning(f"{off_neg_message}")
+                else:
+                    st.warning("This type is not resisted by any other type.")
+                if offense_null.__len__() != 0:
+                    st.error(f"{off_null_message}")
+                else:
+                    st.error("No type is immune to this type.")
+            if st.button("Show defensive attributes"):
+                def_plus_message = "This type takes double the damage from: "
+                def_neg_message = "This type takes half as much damage from: "
+                def_null_message = "This type is immune to: "
+                index = 0
+                for o in selected_dict["damage_relations"]["double_damage_from"]:
+                    defense_plus.append(o["name"])
+                    try:
+                        def_plus_message = def_plus_message + defense_plus[index] + " "
+                    except:
+                        def_plus_message = def_plus_message
+                    index = index + 1
+                index1 = 0
+                for d in selected_dict["damage_relations"]["half_damage_from"]:
+                    defense_neg.append(d["name"])
+                    try:
+                        def_neg_message = def_neg_message + defense_neg[index1] + " "
+                    except:
+                        def_neg_message = def_neg_message
+                    index1 = index1 + 1
+                index2 = 0
+                for i in selected_dict["damage_relations"]["no_damage_from"]:
+                    defense_null.append(i["name"])
+                    try:
+                        def_null_message = def_null_message + defense_null[index2] + " "
+                    except:
+                        def_null_message = def_null_message
+                    index2 = index2 + 1
+                if defense_plus.__len__() != 0:
+                    st.success(f"{def_plus_message}")
+                else:
+                    st.success("This type is not weak to any type.")
+                if defense_neg.__len__() != 0:
+                    st.warning(f"{def_neg_message}")
+                else:
+                    st.warning("This type does not resist any type.")
+                if defense_null.__len__() != 0:
+                    st.error(f"{def_null_message}")
+                else:
+                    st.error("This type is not immune to any other type.")
+    elif tutorial == "Abilities":
+        st.write("There are over 180 different abilities that any Pokémon can have, although most Pokémon have one "
+                 "chosen from a list of one to three abilities that belong to their species, which can change their "
+                 "battling capabilities. Abilities can be as arbitrary as not being able to use held items in battle "
+                 "to as powerful as being able to negate an entire typing's offensive move-set. Some abilities also "
+                 "have the same effect.")
+        st.write("Please refer to the dropdown menu below to see a list of all abilities and their effects.")
+        ability_dict = generate_list_of_abilities()
+        ability_list = []
+        for i in ability_dict["results"]:
+            ability_list.append(i["name"])
+        ability_list.insert(0, "")
+        ability_selected = st.selectbox("Select an ability.", options=ability_list)
+        if ability_selected:
+            index = 0
+            description = ""
+            for i in ability_list:
+                if i == ability_selected:
+                    chosen_dict = generate_ability_info(i)
+                    for u in chosen_dict["effect_entries"]:
+                        if u["language"]["name"] == "en":
+                            description = u["short_effect"]
+                    if description == "":
+                        for e in chosen_dict["flavor_text_entries"]:
+                            if e["language"]["name"] == "en":
+                                description = e["flavor_text"]
+                    if description == "":
+                        st.error("Sadly, there is no information about this ability in the database.")
+                    else:
+                        description = remove_non_ascii(description)
+                        st.info(f"{description}")
+    elif tutorial == "Pokémon base stats":
+        st.write("Each Pokémon has six stats dedicated to it, which dictate how well or poorly it performs in a "
+                 "certain stat. These stats can change when a Pokémon changes forms or evolves into another species.")
+        stat_hear = st.radio("Select what you would like to know about a Pokemon's base stats.",
+                                ["An example of a set of base stats", "Explanation of each stat", "How stats change "
+                                                                                                  "upon evolution"],
+                                captions=["The Pokémon Pikachu will be used as an example.",
+                                          "An explanation of each of a Pokémon's six base stats.",
+                                          "The Gible evolution line will be used as an example."])
+        if stat_hear == "An example of a set of base stats":
+            st.write("Base stats can range anywhere from 1 to 255.")
+            st.write("Below are Pikachu's base stats as an example.")
+            st.image("https://cdn.discordapp.com/attachments/1013528438893711380/1179878954706935870/image.png?ex=657b6"
+                     "2e7&is=6568ede7&hm=3720136cd889cb38c923c053f1642b3c7cd88cb57dd854b38e673968e6709601&"
+                     , caption="Pikachu's base stats, on Bulbapedia")
+        elif stat_hear == "Explanation of each stat":
+            st.write("Learn about each stat:")
+            st.write("HP (how many hits it can take before it faints)")
+            st.write("Attack (how hard it hits with physical moves)")
+            st.write("Defense (how well it takes physical hits)")
+            st.write("Special Attack (how hard it hits with non-physical moves, such as breathing fire)")
+            st.write("Special Defense (how well it takes non-physical hits)")
+            st.write("Speed (how fast it is, which determines turn order)")
+        elif stat_hear == "How stats change upon evolution":
+            st.write("Below is the line graph showing the base stat total increasing as a Gible "
+                     "evolves into a Gabite, then Garchomp, then Mega Garchomp.")
+            pokemon_family = pd.DataFrame([300, 410, 600, 700])
+            st.line_chart(pokemon_family)
+            st.write("A good example of stats increasing and decreasing is the form change between Garchomp and Mega "
+                     "Garchomp. While Mega Garchomp's base Attack, Defense, Special Attack, and Special Defense are "
+                     "all higher than Garchomp, its base speed actually decreases from 102 to 92 when it evolves from "
+                     "Garchomp to Mega Garchomp.")
+            st.image("https://cdn.discordapp.com/attachments/1013528438893711380/1179887079904260228/image.png?ex=657b6"
+                     "a79&is=6568f579&hm=ed5a1dd12f095a9037ce6bf33a371e100f116591ae548a68941bd156f9479a25&"
+                     , caption="Garchomp's base stats, on Bulbapedia")
+            st.image("https://cdn.discordapp.com/attachments/1013528438893711380/1179887169016438795/image.png?ex=657b6"
+                     "a8e&is=6568f58e&hm=c0dedb5b56d56667805eb20f73f8cc27d5cd8cecd0dfa06365aadaab76f85189&"
+                     , caption="Mega Garchomp's base stats, on Bulbapedia")
+    elif tutorial == "Natures, IVs, and EVs":
+        st.warning("This information can be ignored during a casual playthrough of a Pokémon game. This information is "
+                   "better used by casual players looking to understand the formula that is used to calculate a "
+                   "Pokémon's stats.")
+        st.write("When a Pokémon is caught or hatched from an egg, it is given a nature and a set of numbers. These "
+                 "numbers are its individual values, IVs for short.")
+        st.write("There are 20 different natures that all affect your stats, as well as 5 different natures that are "
+                 "considered 'neutral' natures. Each nature increases one stat by 10% and decreases another by 10%. "
+                 "Neutral natures do not affect any stat at all.")
+        st.image("https://cdn.discordapp.com/attachments/1013528438893711380/1179878422890160158/image.png?ex=657b6269&"
+                 "is=6568ed69&hm=b64357d1cd99f108229e986dcf519d7713ec6265bae76146392ba2e81c0de568&"
+                 , caption="List of natures and their effects, on Pokémon Database")
+        st.write("IVs dictate how well a Pokémon's stat will grow when that Pokémon levels up. These are all chosen "
+                 "randomly for the Pokémon when it is received, and the only way to change them is through certain "
+                 "methods only available in later games in the series. These methods tend to be hard to obtain and are "
+                 "only available late into the game. These range anywhere from 0 to 31 per stat.")
+        st.write("Each Pokémon has a set of effort values, EVs for short, that they give to your Pokémon when they are "
+                 "defeated in battle. These values are added to your Pokémon's EVs, which also increase your Pokémon's "
+                 "stats. These range anywhere from 0 to 255 per stat. No Pokémon can have more than 510 total EVs.")
